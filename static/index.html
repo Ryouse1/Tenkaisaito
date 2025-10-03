@@ -7,7 +7,7 @@
 <h2>ファイルをアップロードして解析・展開</h2>
 <input type="file" id="fileinput" multiple>
 <button onclick="upload()">アップロード</button>
-<pre id="result"></pre>
+<div id="result"></div>
 
 <script>
 async function upload() {
@@ -26,8 +26,25 @@ async function upload() {
         const res = await fetch("/upload", { method: "POST", body: form });
         console.log("レスポンスステータス:", res.status);
         const data = await res.json();
-        console.log("サーバー返却:", data);
-        document.getElementById("result").innerText = JSON.stringify(data, null, 2);
+
+        const resultDiv = document.getElementById("result");
+        resultDiv.innerHTML = "";
+
+        data.forEach(item => {
+            const pre = document.createElement("pre");
+            pre.innerText = JSON.stringify(item, null, 2);
+            resultDiv.appendChild(pre);
+
+            if (!item.error) {
+                const link = document.createElement("a");
+                link.href = `/download/${item.filename}`;
+                link.innerText = "展開ファイルをダウンロード";
+                link.download = `${item.filename}_extracted.zip`;
+                resultDiv.appendChild(link);
+                resultDiv.appendChild(document.createElement("br"));
+            }
+        });
+
     } catch (e) {
         console.error("アップロードエラー:", e);
         document.getElementById("result").innerText = "アップロードエラー: " + e;
