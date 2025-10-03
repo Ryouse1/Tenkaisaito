@@ -3,6 +3,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 import os, shutil, tarfile, zipfile, tempfile
 import magic
 
+# PDF / docx 文字列抽出用
+from PyPDF2 import PdfReader
+from docx import Document
+
 app = FastAPI()
 UPLOAD_DIR = tempfile.mkdtemp()
 
@@ -37,6 +41,23 @@ def zip_dir(folder_path, zip_path):
                 arcname = os.path.relpath(full_path, folder_path)
                 zipf.write(full_path, arcname)
 
+# ─────────────── 文字列抽出 ───────────────
+def extract_strings(file_path, ext):
+    try:
+        if ext == ".pdf":
+            reader = PdfReader(file_path)
+            return "\n".join([page.extract_text() or "" for page in reader.pages])[:1000]
+        elif ext in [".docx"]:
+            doc = Document(file_path)
+            return "\n".join([p.text for p in doc.paragraphs])[:1000]
+        else:
+            # バイナリとして文字列抽出（ASCII範囲のみ）
+            with open(file_path, "rb") as bf:
+                content = bf.read()
+            return ''.join([chr(b) if 32 <= b < 127 else '.' for b in content])[:1000]
+    except:
+        return "文字列抽出不可"
+
 # ─────────────── ルート ───────────────
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -53,6 +74,8 @@ async def upload(files: list[UploadFile] = File(...)):
             with open(file_path, "wb") as out_f:
                 shutil.copyfileobj(f.file, out_f)
 
+            ext = os.path.splitext(f.filename)[1].lower()
+
             # ファイル形式判定
             try:
                 mime = magic.Magic(mime=True)
@@ -60,22 +83,17 @@ async def upload(files: list[UploadFile] = File(...)):
             except:
                 file_info = "形式判定不可"
 
-            # 文字列抽出（バイナリ安全）
-            try:
-                with open(file_path, "rb") as bf:
-                    content = bf.read()
-                strings_out = ''.join([chr(b) if 32 <= b < 127 else '.' for b in content])
-            except:
-                strings_out = "文字列抽出不可"
+            # 文字列抽出
+            strings_out = extract_strings(file_path, ext)
 
             # 圧縮展開
             extracted_files = []
             temp_extract_dir = os.path.join(UPLOAD_DIR, f"{f.filename}_extracted")
             os.makedirs(temp_extract_dir, exist_ok=True)
             try:
-                if f.filename.endswith((".tar.gz", ".tar")):
+                if ext in [".tar", ".tar.gz", ".tgz"]:
                     safe_extract_tar(file_path, temp_extract_dir)
-                elif f.filename.endswith(".zip"):
+                elif ext == ".zip":
                     safe_extract_zip(file_path, temp_extract_dir)
                 extracted_files = os.listdir(temp_extract_dir)
             except Exception as e:
@@ -84,7 +102,7 @@ async def upload(files: list[UploadFile] = File(...)):
             results.append({
                 "filename": f.filename,
                 "file_info": file_info,
-                "strings_preview": strings_out[:1000],
+                "strings_preview": strings_out,
                 "extracted_files": extracted_files
             })
 
