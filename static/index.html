@@ -1,44 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <title>全ファイル対応アップロード解析サイト</title>
     <style>
-        #loadingContainer {
-            display: none;
-            width: 100%;
-            background-color: #ddd;
-            margin-top: 10px;
-            border-radius: 5px;
-            overflow: hidden;
-        }
-        #loadingBar {
-            width: 0%;
-            height: 25px;
-            background-color: #4CAF50;
-            text-align: center;
-            color: white;
-            line-height: 25px;
-        }
+        #loadingContainer { display:none; width:100%; background:#ddd; margin-top:10px; border-radius:6px; overflow:hidden;}
+        #loadingBar { width:0%; height:28px; background:#4CAF50; color:#fff; line-height:28px; text-align:center; }
+        .item { margin-top: 12px; padding:8px; border:1px solid #eee; border-radius:6px; }
+        pre { white-space: pre-wrap; max-height:200px; overflow:auto; }
     </style>
 </head>
 <body>
-<h2>ファイルをアップロードして解析・展開</h2>
-<input type="file" id="fileinput" multiple>
-<button onclick="upload()">アップロード</button>
+    <h2>ファイルをアップロードして解析・展開</h2>
+    <input type="file" id="fileinput" multiple>
+    <button onclick="upload()">アップロード</button>
 
-<div id="loadingContainer">
-    <div id="loadingBar">0%</div>
-</div>
+    <div id="loadingContainer">
+        <div id="loadingBar">0%</div>
+    </div>
 
-<div id="result"></div>
+    <div id="result"></div>
 
 <script>
 async function upload() {
     const files = document.getElementById('fileinput').files;
-    if (files.length === 0) {
-        alert("ファイルを選択してください");
-        return;
-    }
+    if (!files || files.length === 0) { alert("ファイルを選択してください"); return; }
 
     const container = document.getElementById("loadingContainer");
     const bar = document.getElementById("loadingBar");
@@ -46,16 +32,11 @@ async function upload() {
     bar.style.width = "0%";
     bar.innerText = "0%";
 
+    // 擬似進捗（アップロードの完了タイミングが正確でない場合でもUX向上）
     let progress = 0;
-
-    // 擬似進捗アニメーション
-    const interval = setInterval(() => {
-        if (progress < 90) {
-            progress += 1;
-            bar.style.width = progress + "%";
-            bar.innerText = progress + "%";
-        }
-    }, 50);
+    const interval = setInterval(()=> {
+        if (progress < 90) { progress += 1; bar.style.width = progress + "%"; bar.innerText = progress + "%"; }
+    }, 40);
 
     const form = new FormData();
     for (let f of files) form.append("files", f);
@@ -72,28 +53,39 @@ async function upload() {
         resultDiv.innerHTML = "";
 
         data.forEach(item => {
+            const wrap = document.createElement("div");
+            wrap.className = "item";
+
+            const title = document.createElement("div");
+            title.innerHTML = `<strong>${item.filename}</strong> (id: ${item.id}) — ${item.file_info}`;
+            wrap.appendChild(title);
+
+            const info = document.createElement("div");
+            info.innerHTML = `展開ファイル数: ${item.extracted_count}`;
+            wrap.appendChild(info);
+
             const pre = document.createElement("pre");
-            pre.innerText = JSON.stringify(item, null, 2);
-            resultDiv.appendChild(pre);
+            pre.innerText = item.preview || "(プレビューなし)";
+            wrap.appendChild(pre);
 
-            if (!item.error) {
-                const link = document.createElement("a");
-                link.href = `/download/${item.filename}`;
-                link.innerText = "展開ファイルをダウンロード";
-                link.download = `${item.filename}_extracted.zip`;
-                resultDiv.appendChild(link);
-                resultDiv.appendChild(document.createElement("br"));
+            if (item.extracted_count >= 0) {
+                const a = document.createElement("a");
+                a.href = item.download_url;
+                a.innerText = "展開ファイルをダウンロード";
+                a.download = `${item.filename}_extracted.zip`;
+                wrap.appendChild(a);
             }
-        });
 
+            resultDiv.appendChild(wrap);
+        });
     } catch (e) {
         clearInterval(interval);
         bar.style.width = "0%";
         bar.innerText = "0% エラー";
-        console.error("アップロードエラー:", e);
         document.getElementById("result").innerText = "アップロードエラー: " + e;
+        console.error(e);
     } finally {
-        setTimeout(() => container.style.display = "none", 500);
+        setTimeout(()=> container.style.display = "none", 600);
     }
 }
 </script>
