@@ -2,30 +2,69 @@
 <html>
 <head>
     <title>全ファイル対応アップロード解析サイト</title>
+    <style>
+        #loadingContainer {
+            display: none;
+            width: 100%;
+            background-color: #ddd;
+            margin-top: 10px;
+        }
+
+        #loadingBar {
+            width: 0%;
+            height: 20px;
+            background-color: #4CAF50;
+            text-align: center;
+            color: white;
+        }
+    </style>
 </head>
 <body>
 <h2>ファイルをアップロードして解析・展開</h2>
 <input type="file" id="fileinput" multiple>
 <button onclick="upload()">アップロード</button>
+
+<div id="loadingContainer">
+    <div id="loadingBar">0%</div>
+</div>
+
 <div id="result"></div>
 
 <script>
 async function upload() {
     const files = document.getElementById('fileinput').files;
-    console.log("選択ファイル:", files);
-
     if (files.length === 0) {
         alert("ファイルを選択してください");
         return;
     }
+
+    // ローディングバー表示
+    const container = document.getElementById("loadingContainer");
+    const bar = document.getElementById("loadingBar");
+    container.style.display = "block";
+    bar.style.width = "0%";
+    bar.innerText = "0%";
+
+    // バー進捗の擬似アニメーション
+    let progress = 0;
+    const interval = setInterval(() => {
+        if (progress < 90) { // 実際の進捗は完了時に100%
+            progress += 1;
+            bar.style.width = progress + "%";
+            bar.innerText = progress + "%";
+        }
+    }, 50);
 
     const form = new FormData();
     for (let f of files) form.append("files", f);
 
     try {
         const res = await fetch("/upload", { method: "POST", body: form });
-        console.log("レスポンスステータス:", res.status);
         const data = await res.json();
+
+        clearInterval(interval);
+        bar.style.width = "100%";
+        bar.innerText = "100%";
 
         const resultDiv = document.getElementById("result");
         resultDiv.innerHTML = "";
@@ -46,8 +85,14 @@ async function upload() {
         });
 
     } catch (e) {
+        clearInterval(interval);
+        bar.style.width = "0%";
+        bar.innerText = "0%";
         console.error("アップロードエラー:", e);
         document.getElementById("result").innerText = "アップロードエラー: " + e;
+    } finally {
+        // 少し待ってから非表示
+        setTimeout(() => container.style.display = "none", 500);
     }
 }
 </script>
