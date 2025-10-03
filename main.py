@@ -1,11 +1,12 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 import os, shutil, tarfile, zipfile, tempfile
 import magic
 
 app = FastAPI()
 UPLOAD_DIR = tempfile.mkdtemp()
 
+# ─────────────── 展開用関数 ───────────────
 def safe_extract_tar(tar_path, extract_path):
     try:
         with tarfile.open(tar_path) as tar:
@@ -28,11 +29,21 @@ def safe_extract_zip(zip_path, extract_path):
     except Exception as e:
         raise Exception(f"zip展開失敗: {e}")
 
+def zip_dir(folder_path, zip_path):
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                arcname = os.path.relpath(full_path, folder_path)
+                zipf.write(full_path, arcname)
+
+# ─────────────── ルート ───────────────
 @app.get("/", response_class=HTMLResponse)
 def index():
     with open("static/index.html", "r") as f:
         return f.read()
 
+# ─────────────── アップロード ───────────────
 @app.post("/upload")
 async def upload(files: list[UploadFile] = File(...)):
     results = []
@@ -84,3 +95,14 @@ async def upload(files: list[UploadFile] = File(...)):
             })
 
     return JSONResponse(results)
+
+# ─────────────── ダウンロード ───────────────
+@app.get("/download/{filename}")
+def download_file(filename: str):
+    folder_path = os.path.join(UPLOAD_DIR, f"{filename}_extracted")
+    if not os.path.exists(folder_path):
+        return {"error": "ファイルが存在しません"}
+    
+    zip_path = os.path.join(UPLOAD_DIR, f"{filename}_extracted.zip")
+    zip_dir(folder_path, zip_path)
+    return FileResponse(zip_path, media_type="application/zip", filename=f"{filename}_extracted.zip")
