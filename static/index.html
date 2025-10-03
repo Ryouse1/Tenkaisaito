@@ -8,14 +8,16 @@
             width: 100%;
             background-color: #ddd;
             margin-top: 10px;
+            border-radius: 5px;
+            overflow: hidden;
         }
-
         #loadingBar {
             width: 0%;
-            height: 20px;
+            height: 25px;
             background-color: #4CAF50;
             text-align: center;
             color: white;
+            line-height: 25px;
         }
     </style>
 </head>
@@ -38,17 +40,17 @@ async function upload() {
         return;
     }
 
-    // ローディングバー表示
     const container = document.getElementById("loadingContainer");
     const bar = document.getElementById("loadingBar");
     container.style.display = "block";
     bar.style.width = "0%";
     bar.innerText = "0%";
 
-    // バー進捗の擬似アニメーション
     let progress = 0;
+
+    // 擬似進捗アニメーション
     const interval = setInterval(() => {
-        if (progress < 90) { // 実際の進捗は完了時に100%
+        if (progress < 90) {
             progress += 1;
             bar.style.width = progress + "%";
             bar.innerText = progress + "%";
@@ -64,7 +66,7 @@ async function upload() {
 
         clearInterval(interval);
         bar.style.width = "100%";
-        bar.innerText = "100%";
+        bar.innerText = "100% 完了";
 
         const resultDiv = document.getElementById("result");
         resultDiv.innerHTML = "";
@@ -87,11 +89,10 @@ async function upload() {
     } catch (e) {
         clearInterval(interval);
         bar.style.width = "0%";
-        bar.innerText = "0%";
+        bar.innerText = "0% エラー";
         console.error("アップロードエラー:", e);
         document.getElementById("result").innerText = "アップロードエラー: " + e;
     } finally {
-        // 少し待ってから非表示
         setTimeout(() => container.style.display = "none", 500);
     }
 }
