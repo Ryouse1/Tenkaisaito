@@ -1,107 +1,175 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 import os
-import zipfile, tarfile, shutil, subprocess
+import mimetypes
+import zipfile
+import tarfile
+import fitz  # PyMuPDF
+import docx
+import openpyxl
+import pptx
+import json
+import xml.etree.ElementTree as ET
+import yaml
+from flask import Flask, request, render_template_string, send_file
+from werkzeug.utils import secure_filename
 
-app = FastAPI()
+app = Flask(__name__)
+UPLOAD_FOLDER = "uploads"
+EXTRACT_FOLDER = "extracted"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(EXTRACT_FOLDER, exist_ok=True)
 
-# 保存用ディレクトリ
-UPLOAD_DIR = "uploads"
-EXTRACT_DIR = "extracted"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(EXTRACT_DIR, exist_ok=True)
+# HTMLテンプレート
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ファイル展開サイト</title>
+</head>
+<body>
+    <h1>ファイル展開サービス</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" required>
+        <input type="submit" value="アップロード">
+    </form>
+    {% if message %}
+        <h2>結果:</h2>
+        <pre>{{ message }}</pre>
+    {% endif %}
+</body>
+</html>
+"""
 
+def handle_text(file_path):
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()[:2000]
 
-# --- HTML (ローディングバー付き) ---
-@app.get("/")
+def handle_pdf(file_path):
+    doc = fitz.open(file_path)
+    text = ""
+    for page in doc:
+        text += page.get_text()
+    return text[:2000]
+
+def handle_docx(file_path):
+    doc = docx.Document(file_path)
+    return "\n".join([p.text for p in doc.paragraphs])[:2000]
+
+def handle_xlsx(file_path):
+    wb = openpyxl.load_workbook(file_path)
+    sheet = wb.active
+    rows = []
+    for row in sheet.iter_rows(values_only=True):
+        rows.append(str(row))
+    return "\n".join(rows)[:2000]
+
+def handle_pptx(file_path):
+    prs = pptx.Presentation(file_path)
+    text = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text.append(shape.text)
+    return "\n".join(text)[:2000]
+
+def handle_zip(file_path):
+    with zipfile.ZipFile(file_path, "r") as zip_ref:
+        zip_ref.extractall(EXTRACT_FOLDER)
+    return "ZIPファイルを展開しました。"
+
+def handle_tar(file_path):
+    with tarfile.open(file_path, "r:*") as tar_ref:
+        tar_ref.extractall(EXTRACT_FOLDER)
+    return "TARファイルを展開しました。"
+
+def handle_json(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.dumps(json.load(f), indent=2)[:2000]
+
+def handle_xml(file_path):
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    return ET.tostring(root, encoding="utf-8").decode("utf-8")[:2000]
+
+def handle_yaml(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return str(data)[:2000]
+
+def handle_binary(file_path):
+    with open(file_path, "rb") as f:
+        data = f.read(200)
+    return f"バイナリデータ(最初の200バイト): {data.hex()}"
+
+# 拡張子ごとの対応
+handlers = {
+    # テキスト
+    ".txt": handle_text,
+    ".md": handle_text,
+    ".csv": handle_text,
+    ".json": handle_json,
+    ".xml": handle_xml,
+    ".yaml": handle_yaml,
+    ".yml": handle_yaml,
+    # 画像は中身を展開せずに情報だけ返す
+    ".png": handle_binary,
+    ".jpg": handle_binary,
+    ".jpeg": handle_binary,
+    ".gif": handle_binary,
+    ".bmp": handle_binary,
+    ".tiff": handle_binary,
+    ".webp": handle_binary,
+    # PDF / Office
+    ".pdf": handle_pdf,
+    ".docx": handle_docx,
+    ".xlsx": handle_xlsx,
+    ".pptx": handle_pptx,
+    # アーカイブ
+    ".zip": handle_zip,
+    ".tar": handle_tar,
+    ".gz": handle_tar,
+    ".bz2": handle_tar,
+    # バイナリ系
+    ".exe": handle_binary,
+    ".dll": handle_binary,
+    ".so": handle_binary,
+    ".bin": handle_binary,
+    ".mp3": handle_binary,
+    ".wav": handle_binary,
+    ".flac": handle_binary,
+    ".ogg": handle_binary,
+    ".mp4": handle_binary,
+    ".avi": handle_binary,
+    ".mov": handle_binary,
+    ".mkv": handle_binary
+}
+
+@app.route("/", methods=["GET"])
 def index():
-    return HTMLResponse("""
-    <html>
-    <head>
-        <title>ファイル展開 & ウイルススキャン</title>
-        <style>
-            body { font-family: sans-serif; margin: 20px; }
-            .progress { width: 100%; background: #eee; margin-top: 10px; }
-            .bar { width: 0%; height: 20px; background: green; text-align: center; color: white; }
-            #status { margin-top: 15px; white-space: pre-wrap; }
-        </style>
-    </head>
-    <body>
-        <h2>ファイルをアップロードして展開＆ウイルスチェック</h2>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <input type="file" name="file" required>
-            <input type="submit" value="アップロード">
-        </form>
-        <div class="progress"><div class="bar" id="bar">0%</div></div>
-        <pre id="status"></pre>
-        <script>
-            const form = document.getElementById("uploadForm");
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                const formData = new FormData(form);
-                const xhr = new XMLHttpRequest();
-                xhr.open("POST", "/upload");
-                xhr.upload.onprogress = (event) => {
-                    if (event.lengthComputable) {
-                        let percent = (event.loaded / event.total) * 100;
-                        document.getElementById("bar").style.width = percent + "%";
-                        document.getElementById("bar").innerText = Math.floor(percent) + "%";
-                    }
-                };
-                xhr.onload = () => document.getElementById("status").innerText = xhr.responseText;
-                xhr.send(formData);
-            };
-        </script>
-    </body>
-    </html>
-    """)
+    return render_template_string(HTML)
 
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "file" not in request.files:
+        return render_template_string(HTML, message="ファイルがありません")
 
-# --- ファイルアップロード & 展開 ---
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    # 保存
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
+    file = request.files["file"]
+    if file.filename == "":
+        return render_template_string(HTML, message="ファイル名が空です")
 
-    # 展開ディレクトリ作成
-    extract_path = os.path.join(EXTRACT_DIR, os.path.splitext(file.filename)[0])
-    os.makedirs(extract_path, exist_ok=True)
+    filename = secure_filename(file.filename)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(file_path)
 
-    # 展開処理
-    try:
-        if zipfile.is_zipfile(file_path):
-            with zipfile.ZipFile(file_path, "r") as zip_ref:
-                zip_ref.extractall(extract_path)
-        elif tarfile.is_tarfile(file_path):
-            with tarfile.open(file_path, "r:*") as tar_ref:
-                tar_ref.extractall(extract_path)
-        else:
-            shutil.copy(file_path, extract_path)  # 非アーカイブはそのまま保存
-    except Exception as e:
-        return JSONResponse({"error": f"展開エラー: {str(e)}"})
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in handlers:
+        try:
+            message = handlers[ext](file_path)
+        except Exception as e:
+            message = f"処理中にエラーが発生しました: {str(e)}"
+    else:
+        message = "このファイル形式には対応できません"
 
-    # --- ウイルススキャン (ClamAV必須) ---
-    result = subprocess.run(["clamscan", "-r", extract_path], capture_output=True, text=True)
-    infected = "Infected files: 0" not in result.stdout
+    return render_template_string(HTML, message=message)
 
-    if infected:
-        shutil.rmtree(extract_path, ignore_errors=True)
-        return JSONResponse({"error": "⚠️ ウイルスが検知されました。ファイルは削除されました。"})
-
-    return JSONResponse({
-        "message": "✅ ファイルを展開し、ウイルスチェック完了。安全です。",
-        "download_url": f"/download/{os.path.basename(extract_path)}"
-    })
-
-
-# --- ダウンロード処理 ---
-@app.get("/download/{folder}")
-def download_files(folder: str):
-    folder_path = os.path.join(EXTRACT_DIR, folder)
-    if not os.path.exists(folder_path):
-        return JSONResponse({"error": "ファイルが存在しません"})
-    zip_path = f"{folder_path}.zip"
-    shutil.make_archive(folder_path, 'zip', folder_path)
-    return FileResponse(zip_path, filename=f"{folder}.zip")
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
