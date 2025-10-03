@@ -15,9 +15,13 @@ async function upload() {
     const form = new FormData();
     for (let f of files) form.append("files", f);
 
-    const res = await fetch("/upload", { method: "POST", body: form });
-    const data = await res.json();
-    document.getElementById("result").innerText = JSON.stringify(data, null, 2);
+    try {
+        const res = await fetch("/upload", { method: "POST", body: form });
+        const data = await res.json();
+        document.getElementById("result").innerText = JSON.stringify(data, null, 2);
+    } catch (e) {
+        document.getElementById("result").innerText = "サーバーエラー: " + e;
+    }
 }
 </script>
 </body>
