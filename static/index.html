@@ -12,15 +12,25 @@
 <script>
 async function upload() {
     const files = document.getElementById('fileinput').files;
+    console.log("選択ファイル:", files);
+
+    if (files.length === 0) {
+        alert("ファイルを選択してください");
+        return;
+    }
+
     const form = new FormData();
     for (let f of files) form.append("files", f);
 
     try {
         const res = await fetch("/upload", { method: "POST", body: form });
+        console.log("レスポンスステータス:", res.status);
         const data = await res.json();
+        console.log("サーバー返却:", data);
         document.getElementById("result").innerText = JSON.stringify(data, null, 2);
     } catch (e) {
-        document.getElementById("result").innerText = "サーバーエラー: " + e;
+        console.error("アップロードエラー:", e);
+        document.getElementById("result").innerText = "アップロードエラー: " + e;
     }
 }
 </script>
