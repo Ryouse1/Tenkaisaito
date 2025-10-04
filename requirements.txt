@@ -1,11 +1,23 @@
+# --- Web サーバー & 基本 ---
 fastapi==0.111.0
 uvicorn==0.30.1
 python-multipart==0.0.9
 requests==2.32.3
 aiofiles==24.1.0
-PyPDF2==3.0.1
-Pillow==10.4.0
-moviepy==1.0.3
-mutagen==1.47.0
-PyMuPDF==1.24.9   # PDF解析 (fitz)
-python-docx==1.1.2   # ← Wordファイル対応
+
+# --- ファイル処理 ---
+Pillow==10.4.0         # 画像
+PyPDF2==3.0.1          # PDF
+PyMuPDF==1.24.9        # PDF (fitz)
+python-docx==1.1.2     # Word(docx)
+openpyxl==3.1.5        # Excel(xlsx)
+odfpy==1.4.1           # OpenDocument(odt, ods, odp)
+
+# --- アーカイブ ---
+rarfile==4.2           # RAR
+py7zr==0.21.0          # 7z
+patool==1.12           # 各種アーカイブ対応 (外部コマンド必要な場合あり)
+
+# --- 音楽・動画 ---
+moviepy==1.0.3         # 動画処理
+mutagen==1.47.0        # 音声メタデータ
